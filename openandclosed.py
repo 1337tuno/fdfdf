@@ -3,14 +3,23 @@ from discord.ui import Button, View
 from discord.ext import commands
 import os
 
-# Bot setup
-TOKEN = 'YOUR_BOT_TOKEN_HERE'
-OPEN_IMAGE = 'open_sign.png'
-CLOSED_GIF = 'closed_sign.gif'
+# Bot setup - Read token from environment variable (Railway)
+TOKEN = os.getenv('TOKEN')
+
+if not TOKEN:
+    print("❌ ERROR: TOKEN not found! Set it in Railway Variables.")
+    exit(1)
+
+print("✅ Token loaded successfully")
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='*', intents=intents)
+
+# Image files
+OPEN_IMAGE = 'open_sign.png'
+CLOSED_GIF = 'closed_sign.gif'
+LOGO_IMAGE = 'beast_eats.png'
 
 class OrderStatusButtons(View):
     def __init__(self, channel: discord.TextChannel):
@@ -19,6 +28,7 @@ class OrderStatusButtons(View):
     
     @discord.ui.button(label="Accept Orders", style=discord.ButtonStyle.green, emoji="🟢")
     async def accept_orders(self, interaction: discord.Interaction, button: Button):
+        # Check permissions
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.response.send_message("❌ You need **Manage Channels** permission!", ephemeral=True)
             return
@@ -40,12 +50,15 @@ class OrderStatusButtons(View):
             file = discord.File(OPEN_IMAGE, filename=OPEN_IMAGE)
             embed.set_image(url=f"attachment://{OPEN_IMAGE}")
         
-        # Edit the original message
+        # Edit the original message (doesn't create new message)
         await interaction.message.edit(embed=embed, attachments=[file] if file else [])
+        
+        # Only the user who clicked sees this confirmation
         await interaction.response.send_message("✅ Status changed to **OPEN** - Channel name updated!", ephemeral=True)
     
     @discord.ui.button(label="Pause Orders", style=discord.ButtonStyle.red, emoji="🔴")
     async def pause_orders(self, interaction: discord.Interaction, button: Button):
+        # Check permissions
         if not interaction.user.guild_permissions.manage_channels:
             await interaction.response.send_message("❌ You need **Manage Channels** permission!", ephemeral=True)
             return
@@ -67,13 +80,20 @@ class OrderStatusButtons(View):
             file = discord.File(CLOSED_GIF, filename=CLOSED_GIF)
             embed.set_image(url=f"attachment://{CLOSED_GIF}")
         
-        # Edit the original message
+        # Edit the original message (doesn't create new message)
         await interaction.message.edit(embed=embed, attachments=[file] if file else [])
+        
+        # Only the user who clicked sees this confirmation
         await interaction.response.send_message("⏸️ Status changed to **CLOSED** - Channel name updated!", ephemeral=True)
 
 @bot.command(name='promo')
 async def promo(ctx):
     """Setup the Beast Eats order status display"""
+    
+    # Check permissions
+    if not ctx.channel.permissions_for(ctx.me).manage_channels:
+        await ctx.send("❌ Bot needs **Manage Channels** permission!")
+        return
     
     # Change channel name to open initially
     await ctx.channel.edit(name='🟢・open')
@@ -86,22 +106,38 @@ async def promo(ctx):
     )
     embed.set_footer(text="Beast Eats - Order Status")
     
+    # Try to attach Beast Eats logo
+    logo_file = None
+    if os.path.exists(LOGO_IMAGE):
+        logo_file = discord.File(LOGO_IMAGE, filename=LOGO_IMAGE)
+        embed.set_thumbnail(url=f"attachment://{LOGO_IMAGE}")
+    
     # Try to attach open image
-    file = None
+    open_file = None
     if os.path.exists(OPEN_IMAGE):
-        file = discord.File(OPEN_IMAGE, filename=OPEN_IMAGE)
+        open_file = discord.File(OPEN_IMAGE, filename=OPEN_IMAGE)
         embed.set_image(url=f"attachment://{OPEN_IMAGE}")
     
     # Create the button view with channel reference
     view = OrderStatusButtons(ctx.channel)
     
-    await ctx.send(embed=embed, view=view, file=file)
+    # Send the message with embed, buttons, and files
+    await ctx.send(embed=embed, view=view, file=open_file)
+    
+    # Delete the command message
+    await ctx.message.delete()
 
 @bot.event
 async def on_ready():
-    print(f'{bot.user} has connected to Discord!')
-    print(f'Beast Eats Bot is ready! 🐺')
-    print(f'Command: *promo')
+    print(f'✅ {bot.user} has connected to Discord!')
+    print(f'🐺 Beast Eats Bot is ready!')
+    print(f'📝 Command: *promo')
+    print(f'🔗 Invite URL: https://discord.com/api/oauth2/authorize?client_id={bot.user.id}&permissions=8&scope=bot')
 
 # Run the bot
-bot.run(TOKEN)
+try:
+    bot.run(TOKEN)
+except discord.errors.LoginFailure:
+    print("❌ ERROR: Invalid token! Check your Railway Variables.")
+except Exception as e:
+    print(f"❌ ERROR: {e}")
